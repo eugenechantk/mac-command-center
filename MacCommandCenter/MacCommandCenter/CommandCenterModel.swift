@@ -103,7 +103,7 @@ final class CommandCenterModel: ObservableObject {
 
     private func updateAwakeSummary() {
         if let pid = awakeController.pid {
-            let mode = keepDisplayAwake ? "system + display" : "system"
+            let mode = keepDisplayAwake ? "system + display + closed lid" : "system + closed lid"
             awakeSummary = "Active via caffeinate pid \(pid), \(mode)"
         } else if keepAwakeWhenPluggedIn {
             awakeSummary = "Requested, but caffeinate is not running"
