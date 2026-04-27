@@ -70,6 +70,7 @@ struct CommandCenterPanel: View {
                     set: { model.setKeepAwake($0) }
                 )
             )
+                .disabled(!model.isExternalPowerConnected)
                 .accessibilityIdentifier("keep_awake_toggle")
 
             Toggle(
@@ -79,7 +80,7 @@ struct CommandCenterPanel: View {
                     set: { model.setKeepDisplayAwake($0) }
                 )
             )
-                .disabled(!model.keepAwakeWhenPluggedIn)
+                .disabled(!model.keepAwakeWhenPluggedIn || !model.isExternalPowerConnected)
                 .accessibilityIdentifier("keep_display_awake_toggle")
 
             Text(model.awakeSummary)
