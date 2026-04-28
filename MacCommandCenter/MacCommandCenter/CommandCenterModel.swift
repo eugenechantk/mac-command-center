@@ -35,6 +35,7 @@ final class CommandCenterModel: ObservableObject {
     @Published var isExternalPowerConnected = PowerSourceMonitor.isExternalPowerConnected()
     @Published var remodex = ManagedService()
     @Published var openClaw = ManagedService()
+    @Published var processes: [ManagedProcess] = []
     @Published var lastRefreshedAt: Date?
     @Published var isRefreshing = false
 
@@ -65,11 +66,13 @@ final class CommandCenterModel: ObservableObject {
         isRefreshing = true
         async let remodexResult = CommandRunner.run("/opt/homebrew/bin/remodex", ["status", "--json"])
         async let openClawResult = CommandRunner.run("/opt/homebrew/bin/openclaw", ["gateway", "status", "--json"])
+        async let processResult = ProcessManager.listProcesses()
 
         setExternalPowerConnected(PowerSourceMonitor.isExternalPowerConnected())
         updateAwakeSummary()
         remodex = ServiceParser.remodexStatus(from: await remodexResult)
         openClaw = ServiceParser.openClawStatus(from: await openClawResult)
+        processes = await processResult
         lastRefreshedAt = Date()
         isRefreshing = false
     }
@@ -103,6 +106,16 @@ final class CommandCenterModel: ObservableObject {
         await refreshStatuses()
     }
 
+    func stopProcess(_ process: ManagedProcess) async {
+        guard let index = processes.firstIndex(where: { $0.pid == process.pid }) else {
+            return
+        }
+
+        processes[index].isStopping = true
+        _ = await ProcessManager.stop(pid: process.pid)
+        await refreshStatuses()
+    }
+
     func stopAwake() {
         awakeController.stop()
         updateAwakeSummary()
@@ -126,12 +139,10 @@ final class CommandCenterModel: ObservableObject {
         if let pid = awakeController.pid {
             let mode = keepDisplayAwake ? "system + display + closed lid" : "system + closed lid"
             awakeSummary = "Active via caffeinate pid \(pid), \(mode)"
-        } else if keepAwakeWhenPluggedIn, !isExternalPowerConnected {
-            awakeSummary = "Paused until power is connected"
+        } else if !isExternalPowerConnected {
+            awakeSummary = "Plug in power to apply"
         } else if keepAwakeWhenPluggedIn {
             awakeSummary = "Requested, but caffeinate is not running"
-        } else if !isExternalPowerConnected {
-            awakeSummary = "Plug in power to enable"
         } else {
             awakeSummary = "Off"
         }

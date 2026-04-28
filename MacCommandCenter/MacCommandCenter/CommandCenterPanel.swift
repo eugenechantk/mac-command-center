@@ -23,10 +23,14 @@ struct CommandCenterPanel: View {
 
             Divider()
 
+            processesSection
+
+            Divider()
+
             footerActions
         }
         .padding(16)
-        .frame(width: 340)
+        .frame(width: 380)
         .task {
             await model.refreshStatuses()
         }
@@ -71,7 +75,6 @@ struct CommandCenterPanel: View {
                     set: { model.setKeepAwake($0) }
                 )
             )
-                .disabled(!model.isExternalPowerConnected)
                 .accessibilityIdentifier("keep_awake_toggle")
 
             Toggle(
@@ -81,7 +84,7 @@ struct CommandCenterPanel: View {
                     set: { model.setKeepDisplayAwake($0) }
                 )
             )
-                .disabled(!model.keepAwakeWhenPluggedIn || !model.isExternalPowerConnected)
+                .disabled(!model.keepAwakeWhenPluggedIn)
                 .accessibilityIdentifier("keep_display_awake_toggle")
 
             Text(model.awakeSummary)
@@ -125,6 +128,34 @@ struct CommandCenterPanel: View {
         }
     }
 
+    private var processesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Processes")
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            if model.processes.isEmpty {
+                Text("No managed processes found")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(model.processes) { process in
+                            ProcessRow(process: process) {
+                                Task {
+                                    await model.stopProcess(process)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.trailing, 4)
+                }
+                .frame(height: 160)
+            }
+        }
+    }
+
     private var footerActions: some View {
         HStack {
             if let lastRefreshedAt = model.lastRefreshedAt {
@@ -144,6 +175,36 @@ struct CommandCenterPanel: View {
                 NSApplication.shared.terminate(nil)
             }
             .accessibilityIdentifier("quit_button")
+        }
+    }
+}
+
+private struct ProcessRow: View {
+    let process: ManagedProcess
+    let stopAction: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "terminal")
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(process.displayName)
+                    .font(.caption)
+                Text(process.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+
+            Button(process.isStopping ? "Stopping" : "Stop", action: stopAction)
+                .controlSize(.small)
+                .disabled(process.isStopping)
+                .accessibilityIdentifier("stop_process_\(process.pid)_button")
         }
     }
 }

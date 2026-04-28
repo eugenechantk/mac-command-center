@@ -9,6 +9,7 @@ import SwiftUI
 
 @main
 struct MacCommandCenterApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = CommandCenterModel()
 
     var body: some Scene {
@@ -19,6 +20,14 @@ struct MacCommandCenterApp: App {
 
         Settings {
             SettingsView()
+        }
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        DispatchQueue.main.async {
+            NSApplication.shared.setActivationPolicy(.accessory)
         }
     }
 }

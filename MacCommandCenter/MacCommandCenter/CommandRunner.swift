@@ -30,16 +30,23 @@ enum CommandRunner {
 
             do {
                 try process.run()
+                async let stdoutData = Task.detached {
+                    stdout.fileHandleForReading.readDataToEndOfFile()
+                }.value
+                async let stderrData = Task.detached {
+                    stderr.fileHandleForReading.readDataToEndOfFile()
+                }.value
                 process.waitUntilExit()
+                let output = await stdoutData
+                let errorOutput = await stderrData
+                return CommandResult(
+                    exitCode: process.terminationStatus,
+                    stdout: String(data: output, encoding: .utf8) ?? "",
+                    stderr: String(data: errorOutput, encoding: .utf8) ?? ""
+                )
             } catch {
                 return CommandResult(exitCode: 127, stdout: "", stderr: error.localizedDescription)
             }
-
-            return CommandResult(
-                exitCode: process.terminationStatus,
-                stdout: String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
-                stderr: String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            )
         }.value
     }
 
