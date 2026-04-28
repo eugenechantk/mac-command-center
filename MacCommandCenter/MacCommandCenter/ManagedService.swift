@@ -9,6 +9,13 @@ struct ManagedService {
     var state: ServiceState = .unknown
     var summary = "Not checked"
     var isWorking = false
+    var pairing: ServicePairing?
+}
+
+struct ServicePairing {
+    let qrPayload: String
+    let code: String?
+    let expiresAt: Date?
 }
 
 enum ServiceParser {
@@ -28,6 +35,7 @@ enum ServiceParser {
         let state = bridgeStatus?["state"] as? String
         let connection = bridgeStatus?["connectionStatus"] as? String
         let bridgePid = bridgeStatus?["pid"] as? Int
+        let pairing = remodexPairing(from: json["pairingSession"] as? [String: Any])
 
         guard installed else {
             return ManagedService(state: .stopped, summary: "Service not installed")
@@ -36,10 +44,10 @@ enum ServiceParser {
         if loaded, state == "running" || launchdPid != nil || bridgePid != nil {
             let pid = bridgePid ?? launchdPid
             let suffix = [pid.map { "pid \($0)" }, connection].compactMap { $0 }.joined(separator: ", ")
-            return ManagedService(state: .running, summary: suffix.isEmpty ? "Running" : suffix)
+            return ManagedService(state: .running, summary: suffix.isEmpty ? "Running" : suffix, pairing: pairing)
         }
 
-        return ManagedService(state: .stopped, summary: "Service stopped")
+        return ManagedService(state: .stopped, summary: "Service stopped", pairing: pairing)
     }
 
     static func openClawStatus(from result: CommandResult) -> ManagedService {
@@ -79,6 +87,26 @@ enum ServiceParser {
             return nil
         }
         return object
+    }
+
+    private static func remodexPairing(from pairingSession: [String: Any]?) -> ServicePairing? {
+        guard let pairingPayload = pairingSession?["pairingPayload"] as? [String: Any],
+              JSONSerialization.isValidJSONObject(pairingPayload),
+              let payloadData = try? JSONSerialization.data(withJSONObject: pairingPayload),
+              let qrPayload = String(data: payloadData, encoding: .utf8) else {
+            return nil
+        }
+
+        let code = (pairingSession?["pairingCode"] as? String).flatMap { code in
+            let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+
+        let expiresAt = (pairingPayload["expiresAt"] as? TimeInterval).map { milliseconds in
+            Date(timeIntervalSince1970: milliseconds / 1000)
+        }
+
+        return ServicePairing(qrPayload: qrPayload, code: code, expiresAt: expiresAt)
     }
 
     private static func cleanedError(from result: CommandResult) -> String {

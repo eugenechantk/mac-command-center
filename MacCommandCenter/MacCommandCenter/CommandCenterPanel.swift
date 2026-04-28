@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import CoreImage.CIFilterBuiltins
 
 struct CommandCenterPanel: View {
     @ObservedObject var model: CommandCenterModel
@@ -91,17 +92,24 @@ struct CommandCenterPanel: View {
 
     private var servicesSection: some View {
         VStack(spacing: 10) {
-            ServiceStatusRow(
-                title: "Remodex",
-                service: model.remodex,
-                actionTitle: model.remodex.state == .running ? "Stop" : "Start",
-                action: {
-                    Task {
-                        await model.toggleRemodex()
+            VStack(alignment: .leading, spacing: 8) {
+                ServiceStatusRow(
+                    title: "Remodex",
+                    service: model.remodex,
+                    actionTitle: model.remodex.state == .running ? "Stop" : "Start",
+                    action: {
+                        Task {
+                            await model.toggleRemodex()
+                        }
                     }
+                )
+                .accessibilityIdentifier("remodex_status_row")
+
+                if let pairing = model.remodex.pairing {
+                    PairingQRCodeView(pairing: pairing)
+                        .padding(.leading, 28)
                 }
-            )
-            .accessibilityIdentifier("remodex_status_row")
+            }
 
             ServiceStatusRow(
                 title: "OpenClaw",
@@ -137,6 +145,65 @@ struct CommandCenterPanel: View {
             }
             .accessibilityIdentifier("quit_button")
         }
+    }
+}
+
+private struct PairingQRCodeView: View {
+    let pairing: ServicePairing
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            if let image = QRCodeRenderer.image(from: pairing.qrPayload) {
+                Image(nsImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .frame(width: 96, height: 96)
+                    .accessibilityLabel("Remodex pairing QR code")
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Scan to connect")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let code = pairing.code {
+                    Text(code)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+
+                if let expiresAt = pairing.expiresAt {
+                    Text("Expires \(expiresAt.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+private enum QRCodeRenderer {
+    private static let context = CIContext()
+    private static let filter = CIFilter.qrCodeGenerator()
+
+    static func image(from string: String) -> NSImage? {
+        guard let data = string.data(using: .utf8) else {
+            return nil
+        }
+
+        filter.setValue(data, forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+
+        guard let outputImage = filter.outputImage else {
+            return nil
+        }
+
+        let scaledImage = outputImage.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
+        guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else {
+            return nil
+        }
+
+        return NSImage(cgImage: cgImage, size: NSSize(width: 96, height: 96))
     }
 }
 
