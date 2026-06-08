@@ -77,13 +77,23 @@ struct CommandCenterPanel: View {
                 .accessibilityIdentifier("keep_awake_toggle")
 
             Toggle(
+                "Keep Awake on Battery",
+                isOn: Binding(
+                    get: { model.keepAwakeOnBattery },
+                    set: { model.setKeepAwakeOnBattery($0) }
+                )
+            )
+                .help("Keeps the Mac awake while running on battery. Automatically turns off once you plug back in.")
+                .accessibilityIdentifier("keep_awake_on_battery_toggle")
+
+            Toggle(
                 "Keep Display Awake",
                 isOn: Binding(
                     get: { model.keepDisplayAwake },
                     set: { model.setKeepDisplayAwake($0) }
                 )
             )
-                .disabled(!model.keepAwakeWhenPluggedIn)
+                .disabled(!model.keepAwakeWhenPluggedIn && !model.keepAwakeOnBattery)
                 .accessibilityIdentifier("keep_display_awake_toggle")
 
             Text(model.awakeSummary)

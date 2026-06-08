@@ -32,6 +32,7 @@ enum ServiceState: String, CaseIterable {
 final class CommandCenterModel: ObservableObject {
     @Published var keepAwakeWhenPluggedIn = false
     @Published var keepDisplayAwake = false
+    @Published var keepAwakeOnBattery = false
     @Published var awakeSummary = "Off"
     @Published var isExternalPowerConnected = PowerSourceMonitor.isExternalPowerConnected()
     @Published var codexDesktop = ManagedService()
@@ -94,15 +95,25 @@ final class CommandCenterModel: ObservableObject {
 
     func setKeepAwake(_ enabled: Bool) {
         keepAwakeWhenPluggedIn = enabled
-        if !enabled {
-            keepDisplayAwake = false
-        }
+        clearDisplayAwakeIfIdle()
         reconcileAwake()
     }
 
     func setKeepDisplayAwake(_ enabled: Bool) {
         keepDisplayAwake = enabled
         reconcileAwake()
+    }
+
+    func setKeepAwakeOnBattery(_ enabled: Bool) {
+        keepAwakeOnBattery = enabled
+        clearDisplayAwakeIfIdle()
+        reconcileAwake()
+    }
+
+    private func clearDisplayAwakeIfIdle() {
+        if !keepAwakeWhenPluggedIn && !keepAwakeOnBattery {
+            keepDisplayAwake = false
+        }
     }
 
     func toggleCodexDesktop() async {
@@ -137,7 +148,9 @@ final class CommandCenterModel: ObservableObject {
     }
 
     private func reconcileAwake() {
-        awakeController.reconcile(enabled: keepAwakeWhenPluggedIn && isExternalPowerConnected, keepDisplayAwake: keepDisplayAwake)
+        // Each power state has its own independent toggle.
+        let shouldRun = isExternalPowerConnected ? keepAwakeWhenPluggedIn : keepAwakeOnBattery
+        awakeController.reconcile(enabled: shouldRun, keepDisplayAwake: keepDisplayAwake)
         updateAwakeSummary()
     }
 
@@ -147,19 +160,28 @@ final class CommandCenterModel: ObservableObject {
         }
 
         isExternalPowerConnected = isConnected
+
+        // Reverting to AC power clears the battery toggle so it does not silently
+        // persist into the next unplug and keep draining the battery.
+        if isConnected {
+            keepAwakeOnBattery = false
+            clearDisplayAwakeIfIdle()
+        }
+
         reconcileAwake()
     }
 
     private func updateAwakeSummary() {
         if let pid = awakeController.pid {
             let mode = keepDisplayAwake ? "system + display + closed lid" : "system + closed lid"
-            awakeSummary = "Active via caffeinate pid \(pid), \(mode)"
-        } else if !isExternalPowerConnected {
-            awakeSummary = "Plug in power to apply"
-        } else if keepAwakeWhenPluggedIn {
+            let power = isExternalPowerConnected ? "" : " (on battery)"
+            awakeSummary = "Active via caffeinate pid \(pid), \(mode)\(power)"
+        } else if isExternalPowerConnected {
+            awakeSummary = keepAwakeWhenPluggedIn ? "Requested, but caffeinate is not running" : "Off"
+        } else if keepAwakeOnBattery {
             awakeSummary = "Requested, but caffeinate is not running"
         } else {
-            awakeSummary = "Off"
+            awakeSummary = "On battery — enable \"Keep Awake on Battery\" to stay awake"
         }
     }
 

@@ -5,6 +5,7 @@ Mac Command Center is a native macOS SwiftUI menu-bar app for managing local dev
 ## What It Does
 
 - Keeps the Mac awake while plugged in.
+- Optionally keeps the Mac awake on battery via a one-shot override that clears itself when you plug back in.
 - Supports closed-lid awake mode for MacBook use cases.
 - Optionally keeps displays awake.
 - Shows Remodex and OpenClaw process status.
@@ -23,7 +24,7 @@ The app uses macOS-native power-management mechanisms:
 - IOKit clamshell notifications detect lid-close events.
 - `/usr/bin/pmset displaysleepnow` is called on lid close when display-awake mode is off.
 
-The first toggle is only active on external power. If unplugged while enabled, the checkbox remains checked but disabled, and the underlying awake assertion pauses until power is connected again.
+By default the awake assertion only runs on external power. If unplugged while enabled, the awake assertion pauses until power is connected again. Enable `Keep Awake on Battery` to keep the assertion running on battery as well — this override turns itself off automatically the moment AC power is reconnected, so it never silently drains the battery on a later unplug.
 
 ## Prerequisites
 

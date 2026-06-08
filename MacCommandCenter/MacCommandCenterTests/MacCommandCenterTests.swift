@@ -24,4 +24,56 @@ final class MacCommandCenterTests: XCTestCase {
 
         XCTAssertEqual(model.overallStatus, "Active")
     }
+
+    @MainActor
+    @objc
+    func testKeepAwakeOnBatteryIsIndependentOfPowerToggle() {
+        let model = CommandCenterModel(openCodexOnLaunch: false, startOpenClawOnLaunch: false)
+
+        model.setKeepAwakeOnBattery(true)
+
+        XCTAssertTrue(model.keepAwakeOnBattery)
+        XCTAssertFalse(model.keepAwakeWhenPluggedIn)
+    }
+
+    @MainActor
+    @objc
+    func testBothAwakeTogglesCanBeEnabledTogether() {
+        let model = CommandCenterModel(openCodexOnLaunch: false, startOpenClawOnLaunch: false)
+
+        model.setKeepAwake(true)
+        model.setKeepAwakeOnBattery(true)
+
+        XCTAssertTrue(model.keepAwakeWhenPluggedIn)
+        XCTAssertTrue(model.keepAwakeOnBattery)
+    }
+
+    @MainActor
+    @objc
+    func testDisablingPowerToggleDoesNotClearBatteryToggle() {
+        let model = CommandCenterModel(openCodexOnLaunch: false, startOpenClawOnLaunch: false)
+
+        model.setKeepAwake(true)
+        model.setKeepAwakeOnBattery(true)
+        model.setKeepAwake(false)
+
+        XCTAssertFalse(model.keepAwakeWhenPluggedIn)
+        XCTAssertTrue(model.keepAwakeOnBattery)
+    }
+
+    @MainActor
+    @objc
+    func testDisplayAwakeClearsOnlyWhenBothAwakeTogglesOff() {
+        let model = CommandCenterModel(openCodexOnLaunch: false, startOpenClawOnLaunch: false)
+
+        model.setKeepAwake(true)
+        model.setKeepAwakeOnBattery(true)
+        model.setKeepDisplayAwake(true)
+
+        model.setKeepAwake(false)
+        XCTAssertTrue(model.keepDisplayAwake)
+
+        model.setKeepAwakeOnBattery(false)
+        XCTAssertFalse(model.keepDisplayAwake)
+    }
 }
