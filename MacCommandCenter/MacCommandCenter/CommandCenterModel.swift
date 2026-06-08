@@ -5,6 +5,7 @@
 
 import Foundation
 import Combine
+import AppKit
 import IOKit.ps
 
 enum ServiceState: String, CaseIterable {
@@ -33,7 +34,7 @@ final class CommandCenterModel: ObservableObject {
     @Published var keepDisplayAwake = false
     @Published var awakeSummary = "Off"
     @Published var isExternalPowerConnected = PowerSourceMonitor.isExternalPowerConnected()
-    @Published var remodex = ManagedService()
+    @Published var codexDesktop = ManagedService()
     @Published var openClaw = ManagedService()
     @Published var processes: [ManagedProcess] = []
     @Published var lastRefreshedAt: Date?
@@ -42,20 +43,34 @@ final class CommandCenterModel: ObservableObject {
     private let awakeController = AwakeController()
     private var powerSourceMonitor: PowerSourceMonitor?
 
-    init() {
+    init(openCodexOnLaunch: Bool = true, startOpenClawOnLaunch: Bool = true) {
         powerSourceMonitor = PowerSourceMonitor { [weak self] isExternalPowerConnected in
             Task { @MainActor in
                 self?.setExternalPowerConnected(isExternalPowerConnected)
             }
         }
+
+        if openCodexOnLaunch || startOpenClawOnLaunch {
+            Task {
+                if openCodexOnLaunch {
+                    await openCodexDesktop()
+                }
+
+                if startOpenClawOnLaunch {
+                    await startOpenClawGatewayIfNeeded()
+                }
+
+                await refreshStatuses()
+            }
+        }
     }
 
     var overallStatus: String {
-        if remodex.state == .error || openClaw.state == .error {
+        if codexDesktop.state == .error || openClaw.state == .error {
             return "Needs attention"
         }
 
-        if keepAwakeWhenPluggedIn || remodex.state == .running || openClaw.state == .running {
+        if keepAwakeWhenPluggedIn || codexDesktop.state == .running || openClaw.state == .running {
             return "Active"
         }
 
@@ -64,13 +79,13 @@ final class CommandCenterModel: ObservableObject {
 
     func refreshStatuses() async {
         isRefreshing = true
-        async let remodexResult = CommandRunner.run("/opt/homebrew/bin/remodex", ["status", "--json"])
+        async let codexStatus = CodexDesktopController.status()
         async let openClawResult = CommandRunner.run("/opt/homebrew/bin/openclaw", ["gateway", "status", "--json"])
         async let processResult = ProcessManager.listProcesses()
 
         setExternalPowerConnected(PowerSourceMonitor.isExternalPowerConnected())
         updateAwakeSummary()
-        remodex = ServiceParser.remodexStatus(from: await remodexResult)
+        codexDesktop = await codexStatus
         openClaw = ServiceParser.openClawStatus(from: await openClawResult)
         processes = await processResult
         lastRefreshedAt = Date()
@@ -90,11 +105,11 @@ final class CommandCenterModel: ObservableObject {
         reconcileAwake()
     }
 
-    func toggleRemodex() async {
-        let shouldStop = remodex.state == .running
-        remodex.isWorking = true
-        _ = await CommandRunner.run("/opt/homebrew/bin/remodex", [shouldStop ? "stop" : "start", "--json"])
-        remodex.isWorking = false
+    func toggleCodexDesktop() async {
+        let shouldStop = codexDesktop.state == .running
+        codexDesktop.isWorking = true
+        _ = shouldStop ? await CodexDesktopController.stop() : await CodexDesktopController.start()
+        codexDesktop.isWorking = false
         await refreshStatuses()
     }
 
@@ -146,6 +161,119 @@ final class CommandCenterModel: ObservableObject {
         } else {
             awakeSummary = "Off"
         }
+    }
+
+    private func openCodexDesktop() async {
+        codexDesktop.isWorking = true
+        _ = await CodexDesktopController.start()
+        codexDesktop = await CodexDesktopController.status()
+    }
+
+    private func startOpenClawGatewayIfNeeded() async {
+        openClaw.isWorking = true
+
+        let statusResult = await CommandRunner.run("/opt/homebrew/bin/openclaw", ["gateway", "status", "--json"])
+        let currentStatus = ServiceParser.openClawStatus(from: statusResult)
+
+        if currentStatus.state == .running {
+            openClaw = currentStatus
+            return
+        }
+
+        _ = await CommandRunner.run("/opt/homebrew/bin/openclaw", ["gateway", "start", "--json"])
+        openClaw.isWorking = false
+    }
+}
+
+@MainActor
+private enum CodexDesktopController {
+    private static let appName = "Codex"
+    private static let bundleIdentifier = "com.openai.codex"
+    private static let appURL = URL(fileURLWithPath: "/Applications/Codex.app")
+
+    static func status() -> ManagedService {
+        if let application = runningApplication() {
+            return ManagedService(state: .running, summary: "pid \(application.processIdentifier)")
+        }
+
+        guard FileManager.default.fileExists(atPath: appURL.path) else {
+            return ManagedService(state: .stopped, summary: "\(appName).app not installed")
+        }
+
+        return ManagedService(state: .stopped, summary: "App stopped")
+    }
+
+    static func start() async -> Bool {
+        guard FileManager.default.fileExists(atPath: appURL.path) else {
+            return false
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+
+        let didOpen = await withCheckedContinuation { continuation in
+            NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { application, error in
+                continuation.resume(returning: application != nil && error == nil)
+            }
+        }
+
+        if didOpen || runningApplication() != nil {
+            await settleWindowsClosed()
+        }
+
+        return didOpen
+    }
+
+    static func stop() async -> Bool {
+        guard let application = runningApplication() else {
+            return true
+        }
+
+        if !application.terminate() {
+            application.forceTerminate()
+        }
+
+        try? await Task.sleep(for: .milliseconds(700))
+        return runningApplication() == nil
+    }
+
+    private static func runningApplication() -> NSRunningApplication? {
+        NSWorkspace.shared.runningApplications.first { application in
+            application.bundleIdentifier == bundleIdentifier
+                || application.localizedName == appName
+        }
+    }
+
+    private static func settleWindowsClosed() async {
+        for _ in 0..<16 {
+            runningApplication()?.hide()
+            await closeWindows()
+            runningApplication()?.hide()
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+    }
+
+    private static func closeWindows() async {
+        _ = await CommandRunner.run(
+            "/usr/bin/osascript",
+            [
+                "-e",
+                """
+                tell application "System Events"
+                    if exists process "Codex" then
+                        tell process "Codex"
+                            repeat with appWindow in windows
+                                try
+                                    perform action "AXPress" of button 1 of appWindow
+                                end try
+                            end repeat
+                        end tell
+                    end if
+                end tell
+                """
+            ]
+        )
+        runningApplication()?.hide()
     }
 }
 

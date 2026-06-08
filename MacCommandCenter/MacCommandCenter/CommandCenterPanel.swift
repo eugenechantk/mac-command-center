@@ -4,7 +4,6 @@
 //
 
 import SwiftUI
-import CoreImage.CIFilterBuiltins
 
 struct CommandCenterPanel: View {
     @ObservedObject var model: CommandCenterModel
@@ -95,29 +94,24 @@ struct CommandCenterPanel: View {
 
     private var servicesSection: some View {
         VStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 8) {
-                ServiceStatusRow(
-                    title: "Remodex",
-                    service: model.remodex,
-                    actionTitle: model.remodex.state == .running ? "Stop" : "Start",
-                    action: {
-                        Task {
-                            await model.toggleRemodex()
-                        }
+            ServiceStatusRow(
+                title: "Codex Desktop",
+                service: model.codexDesktop,
+                actionTitle: model.codexDesktop.state == .running ? "Stop" : "Start",
+                accessibilityIdentifier: "codex_desktop",
+                action: {
+                    Task {
+                        await model.toggleCodexDesktop()
                     }
-                )
-                .accessibilityIdentifier("remodex_status_row")
-
-                if let pairing = model.remodex.pairing {
-                    PairingQRCodeView(pairing: pairing)
-                        .padding(.leading, 28)
                 }
-            }
+            )
+            .accessibilityIdentifier("codex_desktop_status_row")
 
             ServiceStatusRow(
                 title: "OpenClaw",
                 service: model.openClaw,
                 actionTitle: model.openClaw.state == .running ? "Stop" : "Start",
+                accessibilityIdentifier: "openclaw",
                 action: {
                     Task {
                         await model.toggleOpenClaw()
@@ -209,69 +203,11 @@ private struct ProcessRow: View {
     }
 }
 
-private struct PairingQRCodeView: View {
-    let pairing: ServicePairing
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            if let image = QRCodeRenderer.image(from: pairing.qrPayload) {
-                Image(nsImage: image)
-                    .interpolation(.none)
-                    .resizable()
-                    .frame(width: 96, height: 96)
-                    .accessibilityLabel("Remodex pairing QR code")
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Scan to connect")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if let code = pairing.code {
-                    Text(code)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-
-                if let expiresAt = pairing.expiresAt {
-                    Text("Expires \(expiresAt.formatted(date: .omitted, time: .shortened))")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-}
-
-private enum QRCodeRenderer {
-    private static let context = CIContext()
-    private static let filter = CIFilter.qrCodeGenerator()
-
-    static func image(from string: String) -> NSImage? {
-        guard let data = string.data(using: .utf8) else {
-            return nil
-        }
-
-        filter.setValue(data, forKey: "inputMessage")
-        filter.setValue("M", forKey: "inputCorrectionLevel")
-
-        guard let outputImage = filter.outputImage else {
-            return nil
-        }
-
-        let scaledImage = outputImage.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
-        guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else {
-            return nil
-        }
-
-        return NSImage(cgImage: cgImage, size: NSSize(width: 96, height: 96))
-    }
-}
-
 private struct ServiceStatusRow: View {
     let title: String
     let service: ManagedService
     let actionTitle: String
+    let accessibilityIdentifier: String
     let action: () -> Void
 
     var body: some View {
@@ -294,11 +230,11 @@ private struct ServiceStatusRow: View {
             Button(service.isWorking ? "Working" : actionTitle, action: action)
                 .controlSize(.small)
                 .disabled(service.isWorking)
-                .accessibilityIdentifier("\(title.lowercased())_toggle_button")
+                .accessibilityIdentifier("\(accessibilityIdentifier)_toggle_button")
         }
     }
 }
 
 #Preview {
-    CommandCenterPanel(model: CommandCenterModel())
+    CommandCenterPanel(model: CommandCenterModel(openCodexOnLaunch: false, startOpenClawOnLaunch: false))
 }

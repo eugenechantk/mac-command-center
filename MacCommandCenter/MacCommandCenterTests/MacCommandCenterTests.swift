@@ -10,17 +10,17 @@ final class MacCommandCenterTests: XCTestCase {
     @MainActor
     @objc
     func testOverallStatusStartsIdle() {
-        let model = CommandCenterModel()
+        let model = CommandCenterModel(openCodexOnLaunch: false, startOpenClawOnLaunch: false)
 
         XCTAssertEqual(model.overallStatus, "Idle")
     }
 
     @MainActor
     @objc
-    func testServiceToggleUpdatesStateAndRefreshTime() {
-        let model = CommandCenterModel()
+    func testCodexDesktopRunningMakesOverallStatusActive() {
+        let model = CommandCenterModel(openCodexOnLaunch: false, startOpenClawOnLaunch: false)
 
-        model.remodex = ManagedService(state: .running, summary: "pid 1")
+        model.codexDesktop = ManagedService(state: .running, summary: "pid 1")
 
         XCTAssertEqual(model.overallStatus, "Active")
     }

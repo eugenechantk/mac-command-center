@@ -10,13 +10,6 @@ struct ManagedService {
     var state: ServiceState = .unknown
     var summary = "Not checked"
     var isWorking = false
-    var pairing: ServicePairing?
-}
-
-struct ServicePairing {
-    let qrPayload: String
-    let code: String?
-    let expiresAt: Date?
 }
 
 struct ManagedProcess: Identifiable, Equatable {
@@ -35,9 +28,6 @@ struct ManagedProcess: Identifiable, Equatable {
         if command.localizedCaseInsensitiveContains("cloudflare") {
             return "Cloudflare"
         }
-        if command.localizedCaseInsensitiveContains("remodex") {
-            return "Remodex"
-        }
         if command.localizedCaseInsensitiveContains("openclaw") {
             return "OpenClaw"
         }
@@ -55,7 +45,6 @@ struct ManagedProcess: Identifiable, Equatable {
 
 enum ProcessManager {
     private static let processKeywords = [
-        "remodex",
         "openclaw",
         "cloudflare",
         "cloudflared",
@@ -122,37 +111,6 @@ enum ProcessManager {
 }
 
 enum ServiceParser {
-    static func remodexStatus(from result: CommandResult) -> ManagedService {
-        guard result.succeeded else {
-            return ManagedService(state: .error, summary: cleanedError(from: result))
-        }
-
-        guard let json = jsonObject(from: result.stdout) else {
-            return ManagedService(state: .unknown, summary: "Status output was not JSON")
-        }
-
-        let installed = json["installed"] as? Bool ?? false
-        let loaded = json["launchdLoaded"] as? Bool ?? false
-        let launchdPid = json["launchdPid"] as? Int
-        let bridgeStatus = json["bridgeStatus"] as? [String: Any]
-        let state = bridgeStatus?["state"] as? String
-        let connection = bridgeStatus?["connectionStatus"] as? String
-        let bridgePid = bridgeStatus?["pid"] as? Int
-        let pairing = remodexPairing(from: json["pairingSession"] as? [String: Any])
-
-        guard installed else {
-            return ManagedService(state: .stopped, summary: "Service not installed")
-        }
-
-        if loaded, state == "running" || launchdPid != nil || bridgePid != nil {
-            let pid = bridgePid ?? launchdPid
-            let suffix = [pid.map { "pid \($0)" }, connection].compactMap { $0 }.joined(separator: ", ")
-            return ManagedService(state: .running, summary: suffix.isEmpty ? "Running" : suffix, pairing: pairing)
-        }
-
-        return ManagedService(state: .stopped, summary: "Service stopped", pairing: pairing)
-    }
-
     static func openClawStatus(from result: CommandResult) -> ManagedService {
         guard result.succeeded else {
             return ManagedService(state: .error, summary: cleanedError(from: result))
@@ -190,26 +148,6 @@ enum ServiceParser {
             return nil
         }
         return object
-    }
-
-    private static func remodexPairing(from pairingSession: [String: Any]?) -> ServicePairing? {
-        guard let pairingPayload = pairingSession?["pairingPayload"] as? [String: Any],
-              JSONSerialization.isValidJSONObject(pairingPayload),
-              let payloadData = try? JSONSerialization.data(withJSONObject: pairingPayload),
-              let qrPayload = String(data: payloadData, encoding: .utf8) else {
-            return nil
-        }
-
-        let code = (pairingSession?["pairingCode"] as? String).flatMap { code in
-            let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        }
-
-        let expiresAt = (pairingPayload["expiresAt"] as? TimeInterval).map { milliseconds in
-            Date(timeIntervalSince1970: milliseconds / 1000)
-        }
-
-        return ServicePairing(qrPayload: qrPayload, code: code, expiresAt: expiresAt)
     }
 
     private static func cleanedError(from result: CommandResult) -> String {
