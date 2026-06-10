@@ -41,6 +41,22 @@ struct ManagedProcess: Identifiable, Equatable {
     var detail: String {
         "pid \(pid) - \(command)"
     }
+
+    static func collapsedNames(for processes: [ManagedProcess]) -> [String] {
+        var counts: [String: Int] = [:]
+        var orderedNames: [String] = []
+        for process in processes {
+            let name = process.displayName
+            if counts[name] == nil {
+                orderedNames.append(name)
+            }
+            counts[name, default: 0] += 1
+        }
+        return orderedNames.map { name in
+            let count = counts[name, default: 1]
+            return count > 1 ? "\(name) ×\(count)" : name
+        }
+    }
 }
 
 enum ProcessManager {

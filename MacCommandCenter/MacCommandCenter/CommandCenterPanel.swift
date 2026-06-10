@@ -7,6 +7,7 @@ import SwiftUI
 
 struct CommandCenterPanel: View {
     @ObservedObject var model: CommandCenterModel
+    @State private var isProcessesExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -19,6 +20,10 @@ struct CommandCenterPanel: View {
             Divider()
 
             servicesSection
+
+            Divider()
+
+            quickLaunchSection
 
             Divider()
 
@@ -132,17 +137,75 @@ struct CommandCenterPanel: View {
         }
     }
 
-    private var processesSection: some View {
+    private var quickLaunchSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Processes")
+            Text("Quick Launch")
                 .font(.subheadline)
                 .fontWeight(.medium)
+
+            HStack(spacing: 10) {
+                QuickLaunchButton(
+                    title: "codexy",
+                    subtitle: "Codex YOLO",
+                    accessibilityIdentifier: "quick_launch_codexy_button"
+                ) {
+                    Task {
+                        await model.launchInboxTerminal(command: "codexy")
+                    }
+                }
+
+                QuickLaunchButton(
+                    title: "cy",
+                    subtitle: "Claude YOLO",
+                    accessibilityIdentifier: "quick_launch_cy_button"
+                ) {
+                    Task {
+                        await model.launchInboxTerminal(command: "cy")
+                    }
+                }
+            }
+
+            Text("Opens iTerm in ~/dev/inbox")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var processesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isProcessesExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text("Processes")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+
+                    if !model.processes.isEmpty {
+                        Text("\(model.processes.count)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isProcessesExpanded ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("processes_toggle_button")
 
             if model.processes.isEmpty {
                 Text("No managed processes found")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } else {
+            } else if isProcessesExpanded {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(model.processes) { process in
@@ -156,6 +219,15 @@ struct CommandCenterPanel: View {
                     .padding(.trailing, 4)
                 }
                 .frame(height: 160)
+            } else {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(ManagedProcess.collapsedNames(for: model.processes), id: \.self) { name in
+                        Text(name)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("processes_collapsed_list")
             }
         }
     }
@@ -180,6 +252,29 @@ struct CommandCenterPanel: View {
             }
             .accessibilityIdentifier("quit_button")
         }
+    }
+}
+
+private struct QuickLaunchButton: View {
+    let title: String
+    let subtitle: String
+    let accessibilityIdentifier: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+        }
+        .accessibilityIdentifier(accessibilityIdentifier)
     }
 }
 

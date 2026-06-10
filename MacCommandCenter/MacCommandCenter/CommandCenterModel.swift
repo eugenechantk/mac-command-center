@@ -132,6 +132,13 @@ final class CommandCenterModel: ObservableObject {
         await refreshStatuses()
     }
 
+    func launchInboxTerminal(command: String) async {
+        _ = await TerminalLauncher.launchITerm(
+            directory: "/Users/eugenechan/dev/inbox",
+            command: command
+        )
+    }
+
     func stopProcess(_ process: ManagedProcess) async {
         guard let index = processes.firstIndex(where: { $0.pid == process.pid }) else {
             return

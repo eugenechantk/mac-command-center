@@ -11,6 +11,7 @@
 		976BDCF77E66DC622862E8DD /* AwakeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBB356A437EA465800E0C8E4 /* AwakeController.swift */; };
 		EB28EDF19F8B85386FCF01D8 /* CommandRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF8C1684096D02123CCAFDF /* CommandRunner.swift */; };
 		F071F800B08F5A9FB7DCB6AA /* ManagedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20A52917C6E70F28423303E6 /* ManagedService.swift */; };
+		A1F4D27B93C8E05614B7A2D9 /* TerminalLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2E5C38CA4D9F16725C8B3EA /* TerminalLauncher.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -38,6 +39,7 @@
 		D62340E52EA7AEF0009BAB4F /* MacCommandCenterTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacCommandCenterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D62340EF2EA7AEF0009BAB4F /* MacCommandCenterUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacCommandCenterUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DBB356A437EA465800E0C8E4 /* AwakeController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AwakeController.swift; path = MacCommandCenter/AwakeController.swift; sourceTree = "<group>"; };
+		B2E5C38CA4D9F16725C8B3EA /* TerminalLauncher.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TerminalLauncher.swift; path = MacCommandCenter/TerminalLauncher.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -262,6 +264,7 @@
 				826285CE5FB99428B895C14A /* CommandCenterModel.swift in Sources */,
 				EB28EDF19F8B85386FCF01D8 /* CommandRunner.swift in Sources */,
 				F071F800B08F5A9FB7DCB6AA /* ManagedService.swift in Sources */,
+				A1F4D27B93C8E05614B7A2D9 /* TerminalLauncher.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
