@@ -59,7 +59,9 @@ final class AwakeController {
 
     private func start(keepDisplayAwake: Bool) {
         let appPID = String(ProcessInfo.processInfo.processIdentifier)
-        let desiredArguments = keepDisplayAwake ? ["-s", "-d", "-w", appPID] : ["-s", "-w", appPID]
+        // -i (prevent idle sleep) is honored on battery; -s (prevent system sleep) only on AC.
+        // Both are needed so closed-lid keep-awake survives on battery power.
+        let desiredArguments = keepDisplayAwake ? ["-i", "-s", "-d", "-w", appPID] : ["-i", "-s", "-w", appPID]
 
         if let process, process.isRunning, process.arguments == desiredArguments {
             return
