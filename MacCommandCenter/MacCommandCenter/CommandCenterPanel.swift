@@ -110,30 +110,36 @@ struct CommandCenterPanel: View {
     private var servicesSection: some View {
         VStack(spacing: 10) {
             ServiceStatusRow(
-                title: "Codex Desktop",
-                service: model.codexDesktop,
-                actionTitle: model.codexDesktop.state == .running ? "Stop" : "Start",
-                accessibilityIdentifier: "codex_desktop",
+                title: "Hermes Agent",
+                service: model.hermesAgent,
+                actionTitle: model.hermesAgent.state == .running ? "Stop" : "Start",
+                accessibilityIdentifier: "hermes_agent",
                 action: {
                     Task {
-                        await model.toggleCodexDesktop()
+                        await model.toggleHermesAgent()
                     }
                 }
             )
-            .accessibilityIdentifier("codex_desktop_status_row")
+            .accessibilityIdentifier("hermes_agent_status_row")
 
             ServiceStatusRow(
-                title: "OpenClaw",
-                service: model.openClaw,
-                actionTitle: model.openClaw.state == .running ? "Stop" : "Start",
-                accessibilityIdentifier: "openclaw",
+                title: "lfg Server",
+                service: model.lfgServer,
+                actionTitle: model.lfgServer.state == .running ? "Stop" : "Start",
+                accessibilityIdentifier: "lfg_server",
                 action: {
                     Task {
-                        await model.toggleOpenClaw()
+                        await model.toggleLfgServer()
+                    }
+                },
+                secondaryActionTitle: "Restart",
+                secondaryAction: {
+                    Task {
+                        await model.restartLfgServer()
                     }
                 }
             )
-            .accessibilityIdentifier("openclaw_status_row")
+            .accessibilityIdentifier("lfg_server_status_row")
         }
     }
 
@@ -314,6 +320,10 @@ private struct ServiceStatusRow: View {
     let actionTitle: String
     let accessibilityIdentifier: String
     let action: () -> Void
+    // Optional secondary control (e.g. "Restart"), shown only while the service
+    // is running. Defaults to nil so existing rows are unchanged.
+    var secondaryActionTitle: String? = nil
+    var secondaryAction: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -332,6 +342,13 @@ private struct ServiceStatusRow: View {
 
             Spacer()
 
+            if let secondaryActionTitle, let secondaryAction, service.state == .running {
+                Button(secondaryActionTitle, action: secondaryAction)
+                    .controlSize(.small)
+                    .disabled(service.isWorking)
+                    .accessibilityIdentifier("\(accessibilityIdentifier)_secondary_button")
+            }
+
             Button(service.isWorking ? "Working" : actionTitle, action: action)
                 .controlSize(.small)
                 .disabled(service.isWorking)
@@ -341,5 +358,5 @@ private struct ServiceStatusRow: View {
 }
 
 #Preview {
-    CommandCenterPanel(model: CommandCenterModel(openCodexOnLaunch: false, startOpenClawOnLaunch: false))
+    CommandCenterPanel(model: CommandCenterModel(startHermesOnLaunch: false, startLfgOnLaunch: false))
 }

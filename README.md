@@ -8,11 +8,10 @@ Mac Command Center is a native macOS SwiftUI menu-bar app for managing local dev
 - Optionally keeps the Mac awake on battery via a one-shot override that clears itself when you plug back in.
 - Supports closed-lid awake mode for MacBook use cases.
 - Optionally keeps displays awake.
-- Shows Remodex and OpenClaw process status.
-- Starts and stops the Remodex bridge and OpenClaw gateway.
-- Shows Remodex pairing details when Remodex publishes a pairing session.
+- Shows Hermes Agent gateway and lfg server status.
+- Starts and stops the Hermes Agent gateway and lfg server.
 
-The menu-bar popover is the primary control surface. It includes toggles for awake behavior and service rows for Remodex and OpenClaw.
+The menu-bar popover is the primary control surface. It includes toggles for awake behavior and service rows for the Hermes Agent and lfg server.
 
 ## Awake Behavior
 
@@ -31,11 +30,10 @@ By default the awake assertion only runs on external power. If unplugged while e
 - macOS on Apple Silicon or Intel Mac.
 - Xcode or Xcode Command Line Tools.
 - FlowDeck CLI for build/run/test automation.
-- Remodex installed at `/opt/homebrew/bin/remodex`.
-- OpenClaw installed at `/opt/homebrew/bin/openclaw`.
+- Hermes Agent installed at `~/.local/bin/hermes`, `/opt/homebrew/bin/hermes`, or `/usr/local/bin/hermes`.
 - App sandbox disabled for the macOS target, because the app needs to run local CLI tools and power-management commands.
 
-Remodex and OpenClaw installation/onboarding are intentionally out of scope for this app. Install and configure them separately first.
+Hermes Agent installation/onboarding is intentionally out of scope for this app. Install and configure it separately first.
 
 ## Project Layout
 
@@ -55,7 +53,7 @@ Key files:
 - `CommandCenterPanel.swift`: menu-bar popover UI.
 - `CommandCenterModel.swift`: app state and service coordination.
 - `AwakeController.swift`: caffeinate, IOKit, and lid-close behavior.
-- `ManagedService.swift`: Remodex/OpenClaw status parsing.
+- `ManagedService.swift`: Hermes Agent gateway status parsing and managed process grouping.
 - `CommandRunner.swift`: external command execution.
 
 ## Development
@@ -74,6 +72,6 @@ Do not use `xcodebuild` directly for this repository workflow. FlowDeck stores t
 
 ## Current Limitations
 
-- The app expects Homebrew-style executable paths under `/opt/homebrew/bin`.
+- The app expects Hermes Agent at a supported local CLI path.
 - Service installation and onboarding are not managed by the app.
 - Some awake and lid-close behavior depends on macOS power-management APIs and may vary across hardware or OS versions.

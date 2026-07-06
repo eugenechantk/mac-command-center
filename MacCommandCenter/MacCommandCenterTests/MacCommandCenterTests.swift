@@ -10,25 +10,70 @@ final class MacCommandCenterTests: XCTestCase {
     @MainActor
     @objc
     func testOverallStatusStartsIdle() {
-        let model = CommandCenterModel(openCodexOnLaunch: false, startOpenClawOnLaunch: false)
+        let model = CommandCenterModel(startHermesOnLaunch: false, startLfgOnLaunch: false)
 
         XCTAssertEqual(model.overallStatus, "Idle")
     }
 
     @MainActor
     @objc
-    func testCodexDesktopRunningMakesOverallStatusActive() {
-        let model = CommandCenterModel(openCodexOnLaunch: false, startOpenClawOnLaunch: false)
+    func testHermesAgentRunningMakesOverallStatusActive() {
+        let model = CommandCenterModel(startHermesOnLaunch: false, startLfgOnLaunch: false)
 
-        model.codexDesktop = ManagedService(state: .running, summary: "pid 1")
+        model.hermesAgent = ManagedService(state: .running, summary: "pid 88428")
 
         XCTAssertEqual(model.overallStatus, "Active")
     }
 
     @MainActor
     @objc
+    func testLfgServerRunningMakesOverallStatusActive() {
+        let model = CommandCenterModel(startHermesOnLaunch: false, startLfgOnLaunch: false)
+
+        model.lfgServer = ManagedService(state: .running, summary: "pid 91625, port 8766")
+
+        XCTAssertEqual(model.overallStatus, "Active")
+    }
+
+    @objc
+    func testLfgServerStatusParsesListeningPid() {
+        let result = CommandResult(
+            exitCode: 0,
+            stdout: """
+            COMMAND   PID       USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+            bun     91625 eugenechan    4u  IPv4 0x7d65671e3bdaeb5a      0t0  TCP 127.0.0.1:8766 (LISTEN)
+            """,
+            stderr: ""
+        )
+
+        let service = ServiceParser.lfgServerStatus(from: result, port: 8766)
+
+        XCTAssertEqual(service.state, .running)
+        XCTAssertEqual(service.summary, "pid 91625, port 8766")
+    }
+
+    @objc
+    func testLfgServerStatusTreatsEmptyLsofAsStopped() {
+        // lsof exits non-zero with no stdout when nothing is listening.
+        let result = CommandResult(exitCode: 1, stdout: "", stderr: "")
+
+        let service = ServiceParser.lfgServerStatus(from: result, port: 8766)
+
+        XCTAssertEqual(service.state, .stopped)
+        XCTAssertEqual(service.summary, "Not serving on port 8766")
+    }
+
+    @objc
+    func testLfgProcessDisplayNameRecognizesSupervisor() {
+        let process = ManagedProcess(pid: 82367, command: "bash scripts/serve-forever.sh")
+
+        XCTAssertEqual(process.displayName, "lfg Server")
+    }
+
+    @MainActor
+    @objc
     func testKeepAwakeOnBatteryIsIndependentOfPowerToggle() {
-        let model = CommandCenterModel(openCodexOnLaunch: false, startOpenClawOnLaunch: false)
+        let model = CommandCenterModel(startHermesOnLaunch: false, startLfgOnLaunch: false)
 
         model.setKeepAwakeOnBattery(true)
 
@@ -39,7 +84,7 @@ final class MacCommandCenterTests: XCTestCase {
     @MainActor
     @objc
     func testBothAwakeTogglesCanBeEnabledTogether() {
-        let model = CommandCenterModel(openCodexOnLaunch: false, startOpenClawOnLaunch: false)
+        let model = CommandCenterModel(startHermesOnLaunch: false, startLfgOnLaunch: false)
 
         model.setKeepAwake(true)
         model.setKeepAwakeOnBattery(true)
@@ -51,7 +96,7 @@ final class MacCommandCenterTests: XCTestCase {
     @MainActor
     @objc
     func testDisablingPowerToggleDoesNotClearBatteryToggle() {
-        let model = CommandCenterModel(openCodexOnLaunch: false, startOpenClawOnLaunch: false)
+        let model = CommandCenterModel(startHermesOnLaunch: false, startLfgOnLaunch: false)
 
         model.setKeepAwake(true)
         model.setKeepAwakeOnBattery(true)
@@ -160,13 +205,76 @@ final class MacCommandCenterTests: XCTestCase {
         let processes = [
             ManagedProcess(pid: 1, command: "/usr/bin/caffeinate -dims"),
             ManagedProcess(pid: 2, command: "/usr/bin/caffeinate -i"),
-            ManagedProcess(pid: 3, command: "openclaw gateway")
+            ManagedProcess(pid: 3, command: "/Users/eugenechan/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main gateway run")
         ]
 
         XCTAssertEqual(
             ManagedProcess.collapsedNames(for: processes),
-            ["Caffeinate ×2", "OpenClaw"]
+            ["Caffeinate ×2", "Hermes Agent"]
         )
+    }
+
+    @objc
+    func testHermesProcessDisplayNameRecognizesGatewayCommand() {
+        let process = ManagedProcess(
+            pid: 88428,
+            command: "/Users/eugenechan/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main gateway run"
+        )
+
+        XCTAssertEqual(process.displayName, "Hermes Agent")
+    }
+
+    @objc
+    func testHermesGatewayStatusParsesRunningPid() {
+        let result = CommandResult(
+            exitCode: 0,
+            stdout: """
+            Launchd plist: /Users/eugenechan/Library/LaunchAgents/ai.hermes.gateway.plist
+            Service definition matches the current Hermes install
+            Gateway service is loaded
+            {
+            \t"PID" = 88428;
+            \t"Label" = "ai.hermes.gateway";
+            };
+            """,
+            stderr: ""
+        )
+
+        let service = ServiceParser.hermesGatewayStatus(from: result)
+
+        XCTAssertEqual(service.state, .running)
+        XCTAssertEqual(service.summary, "pid 88428")
+    }
+
+    @objc
+    func testHermesGatewayStatusTreatsLoadedWithoutPidAsStopped() {
+        let result = CommandResult(
+            exitCode: 0,
+            stdout: """
+            Launchd plist: /Users/eugenechan/Library/LaunchAgents/ai.hermes.gateway.plist
+            Service definition matches the current Hermes install
+            Gateway service is loaded
+            {
+            \t"Label" = "ai.hermes.gateway";
+            };
+            """,
+            stderr: ""
+        )
+
+        let service = ServiceParser.hermesGatewayStatus(from: result)
+
+        XCTAssertEqual(service.state, .stopped)
+        XCTAssertEqual(service.summary, "Gateway stopped")
+    }
+
+    @objc
+    func testHermesGatewayStatusReportsCommandFailure() {
+        let result = CommandResult(exitCode: 1, stdout: "", stderr: "launchctl failed")
+
+        let service = ServiceParser.hermesGatewayStatus(from: result)
+
+        XCTAssertEqual(service.state, .error)
+        XCTAssertEqual(service.summary, "launchctl failed")
     }
 
     @objc
@@ -177,7 +285,7 @@ final class MacCommandCenterTests: XCTestCase {
     @MainActor
     @objc
     func testDisplayAwakeClearsOnlyWhenBothAwakeTogglesOff() {
-        let model = CommandCenterModel(openCodexOnLaunch: false, startOpenClawOnLaunch: false)
+        let model = CommandCenterModel(startHermesOnLaunch: false, startLfgOnLaunch: false)
 
         model.setKeepAwake(true)
         model.setKeepAwakeOnBattery(true)

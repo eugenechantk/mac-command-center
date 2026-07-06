@@ -33,7 +33,7 @@ Do not use destructive git commands. Do not commit or push unless explicitly req
 
 ## Coding Style & Naming Conventions
 
-Use idiomatic Swift and SwiftUI. Keep state mutations on `@MainActor` models when they affect UI. Prefer small, focused types over broad utility files. Use clear names such as `setKeepAwake(_:)`, `refreshStatuses()`, and `ServiceParser.remodexStatus(from:)`.
+Use idiomatic Swift and SwiftUI. Keep state mutations on `@MainActor` models when they affect UI. Prefer small, focused types over broad utility files. Use clear names such as `setKeepAwake(_:)`, `refreshStatuses()`, and `ServiceParser.hermesGatewayStatus(from:)`.
 
 Follow existing formatting: 4-space indentation, one primary type per file where practical, concise comments only for non-obvious macOS or IOKit behavior.
 
@@ -41,7 +41,7 @@ Follow existing formatting: 4-space indentation, one primary type per file where
 
 `MacCommandCenterTests` compiles app source files directly into the test bundle (no TEST_HOST, no `@testable import`) via explicit entries in the test target's Sources build phase — even though the project otherwise uses synchronized file groups. **When adding a new app source file, also add it to `project.pbxproj`** (a `PBXFileReference`, a `PBXBuildFile`, and an entry in the test target's Sources phase — follow the existing entries as the pattern), or `flowdeck test` will fail with "cannot find 'X' in scope" while `flowdeck build` succeeds. Diagnose membership issues with `flowdeck test --verbose`, which prints `[TargetName] Compiling <file>` per line.
 
-Add tests under `MacCommandCenterTests/` for deterministic parsing and model logic. Add UI tests under `MacCommandCenterUITests/` for user-visible workflows when practical. Test names should describe behavior, for example `testRemodexStatusParsesPairingSession`.
+Add tests under `MacCommandCenterTests/` for deterministic parsing and model logic. Add UI tests under `MacCommandCenterUITests/` for user-visible workflows when practical. Test names should describe behavior, for example `testHermesGatewayStatusParsesRunningPid`.
 
 Run `flowdeck build` before handing off code. Run `flowdeck test` when changing parsing, model behavior, or UI state logic.
 
@@ -57,4 +57,4 @@ PRs should include a short summary, verification commands, screenshots for UI ch
 
 ## Security & Configuration Tips
 
-The app shells out to local tools such as `remodex`, `openclaw`, `caffeinate`, and `pmset`. Keep command execution explicit: use absolute executable paths in app code and avoid shell interpolation. Treat pairing payloads and local service state as sensitive; do not log secrets or commit generated `.remodex` state.
+The app shells out to local tools such as `hermes`, `caffeinate`, `osascript`, and `pmset`. Keep command execution explicit: use absolute executable paths in app code and avoid shell interpolation. Treat pairing payloads and local service state as sensitive; do not log secrets or commit generated `.hermes` state.

@@ -35,8 +35,8 @@ final class CommandCenterModel: ObservableObject {
     @Published var keepAwakeOnBattery = false
     @Published var awakeSummary = "Off"
     @Published var isExternalPowerConnected = PowerSourceMonitor.isExternalPowerConnected()
-    @Published var codexDesktop = ManagedService()
-    @Published var openClaw = ManagedService()
+    @Published var hermesAgent = ManagedService()
+    @Published var lfgServer = ManagedService()
     @Published var processes: [ManagedProcess] = []
     @Published var lastRefreshedAt: Date?
     @Published var isRefreshing = false
@@ -44,21 +44,21 @@ final class CommandCenterModel: ObservableObject {
     private let awakeController = AwakeController()
     private var powerSourceMonitor: PowerSourceMonitor?
 
-    init(openCodexOnLaunch: Bool = true, startOpenClawOnLaunch: Bool = true) {
+    init(startHermesOnLaunch: Bool = true, startLfgOnLaunch: Bool = true) {
         powerSourceMonitor = PowerSourceMonitor { [weak self] isExternalPowerConnected in
             Task { @MainActor in
                 self?.setExternalPowerConnected(isExternalPowerConnected)
             }
         }
 
-        if openCodexOnLaunch || startOpenClawOnLaunch {
+        if startHermesOnLaunch || startLfgOnLaunch {
             Task {
-                if openCodexOnLaunch {
-                    await openCodexDesktop()
+                if startHermesOnLaunch {
+                    await startHermesGatewayIfNeeded()
                 }
 
-                if startOpenClawOnLaunch {
-                    await startOpenClawGatewayIfNeeded()
+                if startLfgOnLaunch {
+                    await startLfgServerIfNeeded()
                 }
 
                 await refreshStatuses()
@@ -67,11 +67,11 @@ final class CommandCenterModel: ObservableObject {
     }
 
     var overallStatus: String {
-        if codexDesktop.state == .error || openClaw.state == .error {
+        if hermesAgent.state == .error || lfgServer.state == .error {
             return "Needs attention"
         }
 
-        if keepAwakeWhenPluggedIn || codexDesktop.state == .running || openClaw.state == .running {
+        if keepAwakeWhenPluggedIn || hermesAgent.state == .running || lfgServer.state == .running {
             return "Active"
         }
 
@@ -80,14 +80,14 @@ final class CommandCenterModel: ObservableObject {
 
     func refreshStatuses() async {
         isRefreshing = true
-        async let codexStatus = CodexDesktopController.status()
-        async let openClawResult = CommandRunner.run("/opt/homebrew/bin/openclaw", ["gateway", "status", "--json"])
+        async let hermesStatus = HermesGatewayController.status()
+        async let lfgStatus = LfgServerController.status()
         async let processResult = ProcessManager.listProcesses()
 
         setExternalPowerConnected(PowerSourceMonitor.isExternalPowerConnected())
         updateAwakeSummary()
-        codexDesktop = await codexStatus
-        openClaw = ServiceParser.openClawStatus(from: await openClawResult)
+        hermesAgent = await hermesStatus
+        lfgServer = await lfgStatus
         processes = await processResult
         lastRefreshedAt = Date()
         isRefreshing = false
@@ -116,19 +116,35 @@ final class CommandCenterModel: ObservableObject {
         }
     }
 
-    func toggleCodexDesktop() async {
-        let shouldStop = codexDesktop.state == .running
-        codexDesktop.isWorking = true
-        _ = shouldStop ? await CodexDesktopController.stop() : await CodexDesktopController.start()
-        codexDesktop.isWorking = false
+    func toggleHermesAgent() async {
+        let shouldStop = hermesAgent.state == .running
+        hermesAgent.isWorking = true
+        _ = shouldStop ? await HermesGatewayController.stop() : await HermesGatewayController.start()
+        hermesAgent.isWorking = false
         await refreshStatuses()
     }
 
-    func toggleOpenClaw() async {
-        let shouldStop = openClaw.state == .running
-        openClaw.isWorking = true
-        _ = await CommandRunner.run("/opt/homebrew/bin/openclaw", ["gateway", shouldStop ? "stop" : "start", "--json"])
-        openClaw.isWorking = false
+    func toggleLfgServer() async {
+        let shouldStop = lfgServer.state == .running
+        lfgServer.isWorking = true
+        if shouldStop {
+            _ = await LfgServerController.stop()
+        } else {
+            _ = await LfgServerController.start()
+            // serve-forever needs a moment to bind the port before status reads true.
+            try? await Task.sleep(for: .milliseconds(1200))
+        }
+        lfgServer.isWorking = false
+        await refreshStatuses()
+    }
+
+    func restartLfgServer() async {
+        lfgServer.isWorking = true
+        _ = await LfgServerController.restart()
+        // serve-forever respawns the child after its backoff (≈1s on a healthy
+        // run); give it room to rebind the port before status reads true.
+        try? await Task.sleep(for: .milliseconds(1800))
+        lfgServer.isWorking = false
         await refreshStatuses()
     }
 
@@ -192,117 +208,142 @@ final class CommandCenterModel: ObservableObject {
         }
     }
 
-    private func openCodexDesktop() async {
-        codexDesktop.isWorking = true
-        _ = await CodexDesktopController.start()
-        codexDesktop = await CodexDesktopController.status()
-    }
+    private func startHermesGatewayIfNeeded() async {
+        hermesAgent.isWorking = true
 
-    private func startOpenClawGatewayIfNeeded() async {
-        openClaw.isWorking = true
-
-        let statusResult = await CommandRunner.run("/opt/homebrew/bin/openclaw", ["gateway", "status", "--json"])
-        let currentStatus = ServiceParser.openClawStatus(from: statusResult)
+        let currentStatus = await HermesGatewayController.status()
 
         if currentStatus.state == .running {
-            openClaw = currentStatus
+            hermesAgent = currentStatus
+            hermesAgent.isWorking = false
             return
         }
 
-        _ = await CommandRunner.run("/opt/homebrew/bin/openclaw", ["gateway", "start", "--json"])
-        openClaw.isWorking = false
+        _ = await HermesGatewayController.start()
+        hermesAgent = await HermesGatewayController.status()
+        hermesAgent.isWorking = false
+    }
+
+    private func startLfgServerIfNeeded() async {
+        lfgServer.isWorking = true
+
+        let currentStatus = await LfgServerController.status()
+
+        if currentStatus.state == .running {
+            lfgServer = currentStatus
+            lfgServer.isWorking = false
+            return
+        }
+
+        _ = await LfgServerController.start()
+        try? await Task.sleep(for: .milliseconds(1200))
+        lfgServer = await LfgServerController.status()
+        lfgServer.isWorking = false
     }
 }
 
-@MainActor
-private enum CodexDesktopController {
-    private static let appName = "Codex"
-    private static let bundleIdentifier = "com.openai.codex"
-    private static let appURL = URL(fileURLWithPath: "/Applications/Codex.app")
+private enum HermesGatewayController {
+    private static var executablePath: String? {
+        [
+            "\(NSHomeDirectory())/.local/bin/hermes",
+            "/opt/homebrew/bin/hermes",
+            "/usr/local/bin/hermes"
+        ].first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
 
-    static func status() -> ManagedService {
-        if let application = runningApplication() {
-            return ManagedService(state: .running, summary: "pid \(application.processIdentifier)")
+    static func status() async -> ManagedService {
+        guard let executablePath else {
+            return ManagedService(state: .stopped, summary: "Hermes CLI not installed")
         }
 
-        guard FileManager.default.fileExists(atPath: appURL.path) else {
-            return ManagedService(state: .stopped, summary: "\(appName).app not installed")
-        }
-
-        return ManagedService(state: .stopped, summary: "App stopped")
+        let result = await CommandRunner.run(executablePath, ["gateway", "status"])
+        return ServiceParser.hermesGatewayStatus(from: result)
     }
 
     static func start() async -> Bool {
-        guard FileManager.default.fileExists(atPath: appURL.path) else {
+        guard let executablePath else {
             return false
         }
 
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = false
-
-        let didOpen = await withCheckedContinuation { continuation in
-            NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { application, error in
-                continuation.resume(returning: application != nil && error == nil)
-            }
-        }
-
-        if didOpen || runningApplication() != nil {
-            await settleWindowsClosed()
-        }
-
-        return didOpen
+        let result = await CommandRunner.run(executablePath, ["gateway", "--accept-hooks", "start"])
+        return result.succeeded
     }
 
     static func stop() async -> Bool {
-        guard let application = runningApplication() else {
+        guard let executablePath else {
             return true
         }
 
-        if !application.terminate() {
-            application.forceTerminate()
+        let result = await CommandRunner.run(executablePath, ["gateway", "stop"])
+        return result.succeeded
+    }
+}
+
+/// The lfg agent control-plane server. It serves HTTP/SSE on 127.0.0.1:8766 and
+/// is run via `scripts/serve-forever.sh` (a foreground supervisor that restarts
+/// the Bun server on crash). Status is read from the port listener; start spawns
+/// the supervisor detached so it survives this app; stop kills the supervisor
+/// (so it stops respawning) and the server child.
+private enum LfgServerController {
+    static let repoPath = "\(NSHomeDirectory())/dev/personal/lfg"
+    static let port = 8766
+
+    static func status() async -> ManagedService {
+        guard FileManager.default.fileExists(atPath: repoPath) else {
+            return ManagedService(state: .stopped, summary: "lfg repo not found at ~/dev/personal/lfg")
         }
 
-        try? await Task.sleep(for: .milliseconds(700))
-        return runningApplication() == nil
-    }
-
-    private static func runningApplication() -> NSRunningApplication? {
-        NSWorkspace.shared.runningApplications.first { application in
-            application.bundleIdentifier == bundleIdentifier
-                || application.localizedName == appName
-        }
-    }
-
-    private static func settleWindowsClosed() async {
-        for _ in 0..<16 {
-            runningApplication()?.hide()
-            await closeWindows()
-            runningApplication()?.hide()
-            try? await Task.sleep(for: .milliseconds(250))
-        }
-    }
-
-    private static func closeWindows() async {
-        _ = await CommandRunner.run(
-            "/usr/bin/osascript",
-            [
-                "-e",
-                """
-                tell application "System Events"
-                    if exists process "Codex" then
-                        tell process "Codex"
-                            repeat with appWindow in windows
-                                try
-                                    perform action "AXPress" of button 1 of appWindow
-                                end try
-                            end repeat
-                        end tell
-                    end if
-                end tell
-                """
-            ]
+        let result = await CommandRunner.run(
+            "/usr/sbin/lsof",
+            ["-nP", "-iTCP:\(port)", "-sTCP:LISTEN"]
         )
-        runningApplication()?.hide()
+        return ServiceParser.lfgServerStatus(from: result, port: port)
+    }
+
+    static func start() async -> Bool {
+        guard FileManager.default.fileExists(atPath: repoPath) else {
+            return false
+        }
+
+        // serve-forever.sh is a foreground supervisor. Launch it through a login
+        // shell (so bun + the pinned version resolve from the user's PATH) and
+        // detach it with nohup + background + disown so it keeps running after
+        // this app — and this spawn call — returns.
+        let script = "cd \(shellQuoted(repoPath)) && nohup bash scripts/serve-forever.sh >> /tmp/lfg-serve.log 2>&1 & disown"
+        let result = await CommandRunner.run("/bin/zsh", ["-lc", script])
+        return result.succeeded
+    }
+
+    static func stop() async -> Bool {
+        let uid = String(getuid())
+        // Kill the supervisor first so it stops respawning the server, then the
+        // server child. pkill exits non-zero when nothing matched — that's fine
+        // for an idempotent stop, so we don't gate on success.
+        _ = await CommandRunner.run("/usr/bin/pkill", ["-U", uid, "-f", "scripts/serve-forever.sh"])
+        _ = await CommandRunner.run("/usr/bin/pkill", ["-U", uid, "-f", "src/cli.ts serve"])
+        return true
+    }
+
+    /// Restart the Bun server so it picks up new code, the lightest way: if the
+    /// serve-forever supervisor is alive, kill ONLY the Bun child — the
+    /// supervisor respawns it after its backoff, so there's no supervisor
+    /// teardown/relaunch and no second supervisor racing for the port. If the
+    /// supervisor isn't running, fall back to a fresh start.
+    static func restart() async -> Bool {
+        let uid = String(getuid())
+        let supervisor = await CommandRunner.run(
+            "/usr/bin/pgrep",
+            ["-U", uid, "-f", "scripts/serve-forever.sh"]
+        )
+        if supervisor.succeeded {
+            _ = await CommandRunner.run("/usr/bin/pkill", ["-U", uid, "-f", "src/cli.ts serve"])
+            return true
+        }
+        return await start()
+    }
+
+    private static func shellQuoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
 

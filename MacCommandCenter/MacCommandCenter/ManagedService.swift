@@ -28,8 +28,12 @@ struct ManagedProcess: Identifiable, Equatable {
         if command.localizedCaseInsensitiveContains("cloudflare") {
             return "Cloudflare"
         }
-        if command.localizedCaseInsensitiveContains("openclaw") {
-            return "OpenClaw"
+        if command.localizedCaseInsensitiveContains("hermes") {
+            return "Hermes Agent"
+        }
+        if command.localizedCaseInsensitiveContains("serve-forever")
+            || command.localizedCaseInsensitiveContains("cli.ts serve") {
+            return "lfg Server"
         }
         if command.localizedCaseInsensitiveContains("caffeinate") {
             return "Caffeinate"
@@ -61,10 +65,11 @@ struct ManagedProcess: Identifiable, Equatable {
 
 enum ProcessManager {
     private static let processKeywords = [
-        "openclaw",
+        "hermes",
         "cloudflare",
         "cloudflared",
-        "caffeinate"
+        "caffeinate",
+        "serve-forever"
     ]
 
     static func listProcesses() async -> [ManagedProcess] {
@@ -127,43 +132,57 @@ enum ProcessManager {
 }
 
 enum ServiceParser {
-    static func openClawStatus(from result: CommandResult) -> ManagedService {
+    /// Parse `lsof -nP -iTCP:<port> -sTCP:LISTEN` output. lsof exits non-zero
+    /// when nothing is listening, so an empty result means "stopped", not an
+    /// error; a data line means the server is up and its pid is column 2.
+    static func lfgServerStatus(from result: CommandResult, port: Int) -> ManagedService {
+        for line in result.stdout.split(separator: "\n") {
+            if line.hasPrefix("COMMAND") { continue }   // header row
+            let columns = line.split(separator: " ", omittingEmptySubsequences: true)
+            if columns.count >= 2, let pid = Int(columns[1]) {
+                return ManagedService(state: .running, summary: "pid \(pid), port \(port)")
+            }
+        }
+        return ManagedService(state: .stopped, summary: "Not serving on port \(port)")
+    }
+
+    static func hermesGatewayStatus(from result: CommandResult) -> ManagedService {
         guard result.succeeded else {
             return ManagedService(state: .error, summary: cleanedError(from: result))
         }
 
-        guard let json = jsonObject(from: result.stdout) else {
-            return ManagedService(state: .unknown, summary: "Status output was not JSON")
+        if let pid = firstMatch(in: result.stdout, patterns: [
+            #""PID"\s*=\s*(\d+)\s*;"#,
+            #"PID\s+(\d+)"#
+        ]) {
+            return ManagedService(state: .running, summary: "pid \(pid)")
         }
 
-        let service = json["service"] as? [String: Any]
-        let runtime = service?["runtime"] as? [String: Any]
-        let runtimeState = runtime?["state"] as? String
-        let runtimeStatus = runtime?["status"] as? String
-        let pid = runtime?["pid"] as? Int
-        let rpc = json["rpc"] as? [String: Any]
-        let rpcOK = rpc?["ok"] as? Bool ?? false
-        let gateway = json["gateway"] as? [String: Any]
-        let port = gateway?["port"] as? Int
-
-        if runtimeState == "running" || runtimeStatus == "running" || rpcOK {
-            let parts = [
-                pid.map { "pid \($0)" },
-                port.map { "port \($0)" },
-                rpcOK ? "RPC OK" : nil
-            ].compactMap { $0 }
-            return ManagedService(state: .running, summary: parts.joined(separator: ", "))
+        let output = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        if output.localizedCaseInsensitiveContains("not installed") {
+            return ManagedService(state: .stopped, summary: "Gateway service not installed")
         }
 
         return ManagedService(state: .stopped, summary: "Gateway stopped")
     }
 
-    private static func jsonObject(from string: String) -> [String: Any]? {
-        guard let data = string.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
+    private static func firstMatch(in string: String, patterns: [String]) -> String? {
+        for pattern in patterns {
+            guard let expression = try? NSRegularExpression(pattern: pattern) else {
+                continue
+            }
+
+            let range = NSRange(string.startIndex..., in: string)
+            guard let match = expression.firstMatch(in: string, range: range),
+                  match.numberOfRanges >= 2,
+                  let valueRange = Range(match.range(at: 1), in: string) else {
+                continue
+            }
+
+            return String(string[valueRange])
         }
-        return object
+
+        return nil
     }
 
     private static func cleanedError(from result: CommandResult) -> String {
