@@ -279,11 +279,15 @@ private enum HermesGatewayController {
     }
 }
 
-/// The lfg agent control-plane server. It serves HTTP/SSE on 127.0.0.1:8766 and
-/// is run via `scripts/serve-forever.sh` (a foreground supervisor that restarts
-/// the Bun server on crash). Status is read from the port listener; start spawns
-/// the supervisor detached so it survives this app; stop kills the supervisor
-/// (so it stops respawning) and the server child.
+/// The lfg agent control-plane server. It serves HTTP/SSE on 127.0.0.1:8766
+/// (loopback) and is run via `scripts/serve-forever.sh` (a foreground supervisor
+/// that restarts the Bun server on crash). Start also exposes it on the tailnet
+/// via `tailscale serve` (tailnet-only HTTPS at this machine's MagicDNS URL →
+/// loopback:8766) so the iOS client can reach it; that mapping persists (`--bg`)
+/// and is intentionally left in place on stop so a brief restart doesn't drop it.
+/// Status is read from the port listener; start spawns the supervisor detached so
+/// it survives this app; stop kills the supervisor (so it stops respawning) and
+/// the server child.
 private enum LfgServerController {
     static let repoPath = "\(NSHomeDirectory())/dev/personal/lfg"
     static let port = 8766
@@ -311,6 +315,20 @@ private enum LfgServerController {
         // this app — and this spawn call — returns.
         let script = "cd \(shellQuoted(repoPath)) && nohup bash scripts/serve-forever.sh >> /tmp/lfg-serve.log 2>&1 & disown"
         let result = await CommandRunner.run("/bin/zsh", ["-lc", script])
+
+        // Expose lfg on the tailnet: `tailscale serve --bg <port>` proxies this
+        // machine's MagicDNS HTTPS URL → 127.0.0.1:8766 (where lfg listens). This
+        // is the reachability path for the iOS client — point it at
+        // https://<magicdns>.ts.net. Tailnet-ONLY (`serve`, never `funnel`) since
+        // the lfg API is unauthenticated. Idempotent; `--bg` persists across
+        // reboots; left in place on stop. Runs via a login shell so `tailscale`
+        // resolves on PATH. Needs the user set as Tailscale operator once
+        // (`tailscale set --operator=$USER`) so it doesn't require sudo.
+        _ = await CommandRunner.run(
+            "/bin/zsh",
+            ["-lc", "tailscale serve --bg \(port)"]
+        )
+
         return result.succeeded
     }
 
