@@ -289,12 +289,14 @@ private enum HermesGatewayController {
 /// it survives this app; stop kills the supervisor (so it stops respawning) and
 /// the server child.
 private enum LfgServerController {
-    static let repoPath = "\(NSHomeDirectory())/dev/personal/lfg"
+    // The lfg repo lives in iCloud Drive (synced across machines). Space + literal
+    // ~ in the folder name are fine in a Swift string; shellQuoted() handles them.
+    static let repoPath = "\(NSHomeDirectory())/Library/Mobile Documents/com~apple~CloudDocs/_Dev/personal/lfg"
     static let port = 8766
 
     static func status() async -> ManagedService {
         guard FileManager.default.fileExists(atPath: repoPath) else {
-            return ManagedService(state: .stopped, summary: "lfg repo not found at ~/dev/personal/lfg")
+            return ManagedService(state: .stopped, summary: "lfg repo not found at \(repoPath)")
         }
 
         let result = await CommandRunner.run(
